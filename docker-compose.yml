@@ -1,0 +1,188 @@
+services:
+
+  server-config:
+    build: ./services/server-config
+    container_name: server-config
+    ports:
+      - "8888:8080"
+    volumes:
+      - ${HOME}/config-repository:/config-repository
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s 
+      timeout: 10s 
+      retries: 5 
+      start_period: 40s 
+
+  auth-service:
+    build: ./services/auth-service
+    container_name: auth-service
+    ports:
+      - "8067:8067"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+    depends_on:
+      server-config:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  customer-service:
+    build: ./services/customer-service
+    container_name: customer-service
+    ports:
+      - "8055:8055"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=postgresql
+    depends_on:
+      server-config:
+        condition: service_healthy
+      postgresql:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  notification-service:
+    build: ./services/notification-service
+    container_name: notification-service
+    ports:
+      - "8093:8093"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=postgresql
+    depends_on:
+      postgresql:
+        condition: service_started
+      server-config:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  order-service:
+    build: ./services/order-service
+    container_name: order-service
+    ports:
+      - "8089:8089"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=postgresql
+    depends_on:
+      server-config:
+        condition: service_healthy
+      postgresql:
+        condition: service_started
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-net
+
+
+  payment-service:
+    build: ./services/payment-service
+    container_name: payment-service
+    ports:
+      - "8085:8085"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=postgresql
+    depends_on:
+      server-config:
+        condition: service_healthy
+      postgresql:
+        condition: service_started
+      kafka:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  product-service:
+    build: ./services/product-service
+    container_name: product-service
+    ports:
+      - "8090:8090"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=postgresql
+    depends_on:
+      server-config:
+        condition: service_healthy
+      postgresql:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  postgresql:
+    image: postgres
+    container_name: pg_sql
+    environment:
+      POSTGRES_USER: store
+      POSTGRES_PASSWORD: store
+      POSTGRES_DB: storedatabase
+
+    ports:
+      #- "5432:5432"
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+    restart: unless-stopped
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.2.1
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - microservices-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.2.1
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+
+    networks:
+      - microservices-net
+    depends_on:
+      - zookeeper
+    restart: unless-stopped
+
+  mail-dev:
+    container_name: mail-dev
+    image: maildev/maildev
+    ports:
+      - 1080:1080
+    networks:
+      - microservices-net
+  
+networks:
+  microservices-net:
+    driver: bridge
+
+
+volumes:
+  postgres-data:
